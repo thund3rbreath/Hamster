@@ -32,7 +32,7 @@ def get_session_names() -> list[str]:
     session_names = sorted(glob.glob("sessions/*.session"))
     session_names = [
         os.path.splitext(os.path.basename(file))[0] for file in session_names
-    ]
+    ]crh
 
     return session_names
 
@@ -143,19 +143,14 @@ async def run_tasks_query(query_ids: list[str]):
     playground = Playground(f"Key thread")
     if settings.AUTO_PLAYGROUND:
         threading.Thread(target=playground.start).start()
-    tasks = [
-        asyncio.create_task(
-            run_query_tapper(
-                query=query,
-                proxy=next(proxies_cycle) if proxies_cycle else None,
-                name=f"Account{next(name_cycle)}",
-                playground=playground
-            )
-        )
-        for query in query_ids
-    ]
 
-    await asyncio.gather(*tasks)
+    for query in query_ids:
+        threading.Thread(target=run_query_tapper, args=(
+            query,
+            f"Account{next(name_cycle)}",
+            next(proxies_cycle) if proxies_cycle else None,
+            playground
+        )).start()
 
 
 async def run_tasks(tg_clients: list[Client]):
