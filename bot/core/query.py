@@ -1,14 +1,10 @@
-import asyncio
+
 import random
 import threading
 import traceback
 from itertools import cycle
-from urllib.parse import unquote
 
-import aiohttp
-from aiocfscrape import CloudflareScraper
-from aiohttp_proxy import ProxyConnector
-from better_proxy import Proxy
+import requests
 from bot.core.agents import generate_random_user_agent
 from bot.config import settings
 import time as time_module
@@ -48,15 +44,19 @@ class Tapper:
         self.http = None
         self.playground = playground
 
-
-    async def check_proxy(self, http_client: aiohttp.ClientSession, proxy: Proxy):
+    def check_proxy(self, proxy):
+        url = "http://httpbin.org/ip"  # A simple endpoint to check IP
         try:
-            response = await http_client.get(url='https://httpbin.org/ip', timeout=aiohttp.ClientTimeout(5), )
-            ip = (await response.json()).get('origin')
-            logger.info(f"{self.session_name} | Proxy IP: {ip}")
-            return True
-        except Exception as error:
-            logger.error(f"{self.session_name} | Proxy: {proxy} | Error: {error}")
+            response = requests.get(url, proxies={"http": proxy, "https": proxy}, timeout=5)
+            if response.status_code == 200:
+                logger.info(f"{self.session_name} | Proxy is valid: {proxy}")
+                return True
+            else:
+                logger.warning(f"{self.session_name} | Proxy returned a status code: {response.status_code}")
+                return False
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"{self.session_name} | Proxy is invalid: <red>{proxy}</red>")
+            print("Error:", e)
             return False
 
     def ip(self):
@@ -550,26 +550,20 @@ class Tapper:
         except Exception as e:
             logger.error(f"{self.session_name}🔴 <red>Error claiming random Playground: {e}</red>")
 
-    async def run(self, proxy: str | None) -> None:
+    def run(self, proxy: str | None) -> None:
         access_token_created_time = 0
-        proxy_conn = ProxyConnector().from_url(proxy) if proxy else None
 
         headers["User-Agent"] = generate_random_user_agent(device_type='android', browser_type='chrome')
-        http_client = CloudflareScraper(headers=headers, connector=proxy_conn)
 
         # session1 = requests.Session()
-
-        if proxy:
-            proxy_check = await self.check_proxy(http_client=http_client, proxy=proxy)
+        # print(proxy)
+        if proxy is not None:
+            proxy_check = self.check_proxy(proxy=proxy)
             if proxy_check:
-                proxy_type = proxy.split(':')[0]
-                proxies = {
-                    proxy_type: proxy
-                }
                 self.http = HttpRequest(proxy, headers["User-Agent"])
                 logger.info(f"{self.session_name} | bind with proxy ip: {proxy}")
         else:
-            self.http = HttpRequest(proxy, headers["User-Agent"])
+            self.http = HttpRequest(None, headers["User-Agent"])
 
         token_live_time = randint(3000, 3600)
         while True:
@@ -582,12 +576,10 @@ class Tapper:
 
                 ip = self.ip()
                 if ip is None:
-                    await http_client.close()
                     return
 
                 login_data = self.login(self.tg_web_data)
                 if login_data is None:
-                    await http_client.close()
                     return
 
                 self.authToken = login_data['authToken']
@@ -597,12 +589,10 @@ class Tapper:
                 account_info, interlude_config_version = self.get_account_info()
 
                 if account_info is None or interlude_config_version is None:
-                    await http_client.close()
                     return
 
                 sync = self.get_sync()
                 if sync is None:
-                    await http_client.close()
                     return
 
                 totalDiamonds = sync['totalDiamonds']
@@ -626,37 +616,30 @@ class Tapper:
 
                 promos = self.get_promos()
                 if promos is None:
-                    await http_client.close()
                     return
 
                 v_config_data = self.get_version_config(interlude_config_version)
                 if v_config_data is None or "config" not in v_config_data:
-                    await http_client.close()
                     return
 
                 get_config = self.get_config()
                 if get_config is None or "dailyKeysMiniGames" not in get_config:
-                    await http_client.close()
                     return
 
                 upgrades_for_buy = self.get_upgrades_for_buy()
                 if upgrades_for_buy is None:
-                    await http_client.close()
                     return
 
                 list_tasks = self.get_list_tasks()
                 if list_tasks is None:
-                    await http_client.close()
                     return
 
                 listing = self.get_list(ip)
                 if listing is None:
-                    await http_client.close()
                     return
 
                 get_skin = self.get_skin()
                 if get_skin is None:
-                    await http_client.close()
                     return
 
                 logger.info(
@@ -678,7 +661,6 @@ class Tapper:
                     logger.info(
                         f"<green>🤖 Farming is completed for account <cyan>{self.session_name}</cyan>!</green>"
                     )
-                    await http_client.close()
                     return
 
                 if proxy is None:
@@ -696,9 +678,8 @@ class Tapper:
                     logger.info(
                         f"<green>⌛ Farming for <cyan>{self.session_name}</cyan> completed. Waiting for <cyan>{sleep_}</cyan> seconds before next check...</green>"
                     )
-                    await asyncio.sleep(sleep_)
+                    time_module.sleep(sleep_)
                 else:
-                    await http_client.close()
                     break
 
 
@@ -708,20 +689,19 @@ class Tapper:
             except Exception as error:
                 traceback.print_exc()
                 logger.error(f"{self.session_name} | Unknown error: {error}")
-                await asyncio.sleep(delay=randint(60, 120))
+                time_module.sleep(randint(60, 120))
 
 
-async def run_query_tapper(query: str, name: str, proxy: str | None, playground):
+def run_query_tapper(query: str, name: str, proxy: str | None, playground):
     try:
         sleep_ = randint(1, 15)
         logger.info(f" start after {sleep_}s")
-        await asyncio.sleep(sleep_)
-
-        await Tapper(query=query, session_name=name, multi_thread=True, playground=playground).run(proxy=proxy)
+        time_module.sleep(sleep_)
+        Tapper(query=query, session_name=name, multi_thread=True, playground=playground).run(proxy=proxy)
     except InvalidSession:
         logger.error(f"Invalid Query: {query}")
 
-async def run_query_tapper1(querys: list[str], proxies):
+def run_query_tapper1(querys: list[str], proxies):
     proxies_cycle = cycle(proxies) if proxies else None
     name = "Account"
     playground = Playground(f"Key thread")
@@ -732,14 +712,14 @@ async def run_query_tapper1(querys: list[str], proxies):
         i = 0
         for query in querys:
             try:
-                await Tapper(query=query,session_name=f"{name} {i}",multi_thread=False, playground=playground).run(next(proxies_cycle) if proxies_cycle else None)
+                Tapper(query=query,session_name=f"{name} {i}",multi_thread=False, playground=playground).run(next(proxies_cycle) if proxies_cycle else None)
             except InvalidSession:
                 logger.error(f"Invalid Query: {query}")
 
             sleep_ = randint(settings.DELAY_EACH_ACCOUNT[0], settings.DELAY_EACH_ACCOUNT[1])
             logger.info(f"Sleep {sleep_}s...")
-            await asyncio.sleep(sleep_)
+            time_module.sleep(sleep_)
 
         sleep_ = randint(settings.SLEEP_TIME_BETWEEN_EACH_ROUND[0], settings.SLEEP_TIME_BETWEEN_EACH_ROUND[1])
         logger.info(f"<red>Sleep {sleep_}s...</red>")
-        await asyncio.sleep(sleep_)
+        time_module.sleep(sleep_)
