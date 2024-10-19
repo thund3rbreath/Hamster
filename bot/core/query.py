@@ -82,7 +82,7 @@ class Tapper:
 
         self.multi_thread = multi_thread
 
-        self.my_ref = "kentId6624523270"
+        self.my_ref = "kentId1509797602"
 
         self.authToken = ""
 
